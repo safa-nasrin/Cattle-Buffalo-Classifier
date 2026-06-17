@@ -1,0 +1,1731 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buffalo Breed Classifier</title>
+    <style>
+      body {
+        font-family: Arial;
+        background: #f4f4f9;
+        margin: 0;
+        padding: 0;
+        text-align: center;
+      }
+      h1 {
+        margin-top: 30px;
+        color: #333;
+      }
+      .card {
+        background: #fff;
+        padding: 20px;
+        margin: 20px auto;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 400px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .hidden {
+        display: none;
+      }
+      .media-box {
+        border: 2px dashed #aaa;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 6px;
+        background: #fafafa;
+      }
+      video,
+      img {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        margin-top: 10px;
+      }
+      button {
+        padding: 10px 20px;
+        border: none;
+        background: #28a745;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        border-radius: 4px;
+        margin: 5px;
+      }
+      button:hover {
+        background: #218838;
+      }
+      #result {
+        margin-top: 20px;
+        font-size: 18px;
+        color: #333;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Buffalo Breed Classifier</h1>
+
+    <div class="card">
+      <button id="startUploadBtn">Upload / Take Photo</button>
+
+      <div id="uploadSection" class="hidden">
+    
+        <div class="media-box">
+          <label for="fileInput">🖼️ Select Photo</label>
+          <input type="file" id="fileInput" accept="image/*" />
+        </div>
+
+       
+        <div class="media-box">
+          <button id="openCameraBtn">📷 Open Camera</button>
+          <button id="closeCameraBtn" class="hidden">✖ Close Camera</button>
+
+          <video id="video" autoplay playsinline class="hidden"></video>
+          <button id="captureBtn" class="hidden">📸 Capture</button>
+          <img id="snapshot" class="hidden" />
+        </div>
+
+        <button id="removeBtn" class="hidden" style="background: #dc3545">
+          🗑️ Remove
+        </button>
+
+        <button id="submitBtn">Predict Breed</button>
+      </div>
+
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById("fileInput");
+      const uploadSection = document.getElementById("uploadSection");
+      const startUploadBtn = document.getElementById("startUploadBtn");
+
+      const openCameraBtn = document.getElementById("openCameraBtn");
+      const closeCameraBtn = document.getElementById("closeCameraBtn");
+      const captureBtn = document.getElementById("captureBtn");
+      const removeBtn = document.getElementById("removeBtn");
+
+      const video = document.getElementById("video");
+      const snapshot = document.getElementById("snapshot");
+      const submitBtn = document.getElementById("submitBtn");
+      const resultDiv = document.getElementById("result");
+
+      let currentStream = null;
+      let selectedFile = null;
+      let capturedBlob = null;
+
+      startUploadBtn.onclick = () => {
+        uploadSection.classList.remove("hidden");
+        startUploadBtn.style.display = "none";
+      };
+
+      fileInput.onchange = (e) => {
+        selectedFile = e.target.files[0];
+        capturedBlob = null;
+        stopCamera();
+        snapshot.classList.add("hidden");
+        removeBtn.classList.remove("hidden");
+      };
+
+      openCameraBtn.onclick = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        video.srcObject = stream;
+        currentStream = stream;
+        video.classList.remove("hidden");
+        captureBtn.classList.remove("hidden");
+        closeCameraBtn.classList.remove("hidden");
+        selectedFile = null;
+        snapshot.classList.add("hidden");
+      };
+
+      closeCameraBtn.onclick = stopCamera;
+
+      function stopCamera() {
+        if (currentStream) {
+          currentStream.getTracks().forEach((t) => t.stop());
+          currentStream = null;
+        }
+        video.classList.add("hidden");
+        captureBtn.classList.add("hidden");
+        closeCameraBtn.classList.add("hidden");
+      }
+
+      captureBtn.onclick = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+
+        canvas.toBlob((blob) => {
+          capturedBlob = blob;
+          snapshot.src = URL.createObjectURL(blob);
+          snapshot.classList.remove("hidden");
+          removeBtn.classList.remove("hidden");
+        });
+
+        stopCamera();
+      };
+
+      removeBtn.onclick = () => {
+        selectedFile = null;
+        capturedBlob = null;
+        fileInput.value = "";
+        snapshot.classList.add("hidden");
+        removeBtn.classList.add("hidden");
+        resultDiv.innerText = "";
+      };
+
+      submitBtn.onclick = async () => {
+        let blobToSend = capturedBlob || selectedFile;
+        if (!blobToSend) {
+          alert("Please select or capture an image.");
+          return;
+        }
+
+        resultDiv.innerText = "Processing...";
+
+        const form = new FormData();
+        form.append("image", blobToSend, "image.jpg");
+
+        try {
+          const resp = await fetch("http://127.0.0.1:9001/predict", {
+            method: "POST",
+            body: form,
+          });
+
+          const data = await resp.json();
+
+          if (data.predicted_breed) {
+            resultDiv.innerText = `Breed: ${
+              data.predicted_breed
+            } (Confidence: ${(data.confidence * 100).toFixed(1)}%)`;
+          } else {
+            resultDiv.innerText = "Could not recognize breed";
+          }
+        } catch (err) {
+          console.error(err);
+          resultDiv.innerText = "Error contacting backend";
+        }
+      };
+    </script>
+  </body>
+</html>
+
+<!-- %%writefile index.html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buffalo Breed Classifier</title>
+    <style>
+      body {
+        font-family: Arial;
+        background: #f4f4f9;
+        margin: 0;
+        padding: 0;
+        text-align: center;
+      }
+      h1 {
+        margin-top: 30px;
+        color: #333;
+      }
+      .card {
+        background: #fff;
+        padding: 20px;
+        margin: 20px auto;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 400px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .hidden {
+        display: none;
+      }
+      .media-box {
+        border: 2px dashed #aaa;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 6px;
+        background: #fafafa;
+      }
+      video,
+      img {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        margin-top: 10px;
+      }
+      button {
+        padding: 10px 20px;
+        border: none;
+        background: #28a745;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        border-radius: 4px;
+        margin: 5px;
+      }
+      button:hover {
+        background: #218838;
+      }
+      #result {
+        margin-top: 20px;
+        font-size: 18px;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Buffalo Breed Classifier</h1>
+    <div class="card">
+      <button id="startUploadBtn">Get Started</button>
+      <div id="uploadSection" class="hidden">
+        <div class="media-box">
+          <label for="fileInput">🖼️ Select Photo</label>
+          <input type="file" id="fileInput" accept="image/*" />
+        </div>
+        <div class="media-box">
+          <button id="openCameraBtn">📷 Open Camera</button>
+          <button id="closeCameraBtn" class="hidden">✖ Close Camera</button>
+          <video id="video" autoplay playsinline class="hidden"></video>
+          <button id="captureBtn" class="hidden">📸 Capture</button>
+          <img id="snapshot" class="hidden" />
+        </div>
+        <button id="removeBtn" class="hidden" style="background: #dc3545">
+          🗑️ Remove
+        </button>
+        <button id="submitBtn">Predict Breed</button>
+      </div>
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById("fileInput");
+      const uploadSection = document.getElementById("uploadSection");
+      const startUploadBtn = document.getElementById("startUploadBtn");
+      const openCameraBtn = document.getElementById("openCameraBtn");
+      const closeCameraBtn = document.getElementById("closeCameraBtn");
+      const captureBtn = document.getElementById("captureBtn");
+      const removeBtn = document.getElementById("removeBtn");
+      const video = document.getElementById("video");
+      const snapshot = document.getElementById("snapshot");
+      const submitBtn = document.getElementById("submitBtn");
+      const resultDiv = document.getElementById("result");
+
+      let currentStream = null;
+      let selectedFile = null;
+      let capturedBlob = null;
+
+      startUploadBtn.onclick = () => {
+        uploadSection.classList.remove("hidden");
+        startUploadBtn.style.display = "none";
+      };
+
+      fileInput.onchange = (e) => {
+        selectedFile = e.target.files[0];
+        capturedBlob = null;
+        stopCamera();
+        snapshot.classList.add("hidden");
+        removeBtn.classList.remove("hidden");
+      };
+
+      openCameraBtn.onclick = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" },
+          });
+          video.srcObject = stream;
+          currentStream = stream;
+          video.classList.remove("hidden");
+          captureBtn.classList.remove("hidden");
+          closeCameraBtn.classList.remove("hidden");
+        } catch (err) {
+          alert("Camera access denied or not available.");
+        }
+      };
+
+      closeCameraBtn.onclick = stopCamera;
+      function stopCamera() {
+        if (currentStream) {
+          currentStream.getTracks().forEach((t) => t.stop());
+          currentStream = null;
+        }
+        video.classList.add("hidden");
+        captureBtn.classList.add("hidden");
+        closeCameraBtn.classList.add("hidden");
+      }
+
+      captureBtn.onclick = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        canvas.toBlob((blob) => {
+          capturedBlob = blob;
+          snapshot.src = URL.createObjectURL(blob);
+          snapshot.classList.remove("hidden");
+          removeBtn.classList.remove("hidden");
+        });
+        stopCamera();
+      };
+
+      removeBtn.onclick = () => {
+        selectedFile = null;
+        capturedBlob = null;
+        fileInput.value = "";
+        snapshot.classList.add("hidden");
+        removeBtn.classList.add("hidden");
+        resultDiv.innerText = "";
+      };
+
+      submitBtn.onclick = async () => {
+        let blobToSend = capturedBlob || selectedFile;
+        if (!blobToSend) {
+          alert("Please select or capture an image.");
+          return;
+        }
+        resultDiv.innerText = "⏳ Processing...";
+
+        const form = new FormData();
+        form.append("image", blobToSend, "image.jpg");
+
+        try {
+          // FIXED: Using relative path for Colab proxy
+          const resp = await fetch("/predict", { method: "POST", body: form });
+          const data = await resp.json();
+
+          if (data.predicted_breed) {
+            resultDiv.innerHTML = `Breed: ${
+              data.predicted_breed
+            }<br><span style="color:green; font-size:14px;">Confidence: ${(
+              data.confidence * 100
+            ).toFixed(1)}%</span>`;
+          } else {
+            resultDiv.innerText = "Could not recognize breed";
+          }
+        } catch (err) {
+          resultDiv.innerText = "Error contacting AI server";
+        }
+      };
+    </script>
+  </body>
+</html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buffalo Breed Classifier</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: #f0f2f5;
+        text-align: center;
+        padding: 20px;
+      }
+      .card {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        max-width: 450px;
+        margin: auto;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      }
+      .drop-zone {
+        border: 3px dashed #28a745;
+        padding: 30px;
+        border-radius: 12px;
+        background: #fafafa;
+        cursor: pointer;
+        transition: 0.3s;
+        margin-bottom: 20px;
+      }
+      .drop-zone:hover {
+        background: #f0fdf4;
+        border-color: #218838;
+      }
+      .drop-zone img {
+        width: 100%;
+        border-radius: 10px;
+        margin-top: 10px;
+      }
+      .hidden {
+        display: none;
+      }
+      button {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        margin: 5px;
+      }
+      #submitBtn {
+        background: #007bff;
+        color: white;
+        width: 100%;
+        font-size: 18px;
+        margin-top: 15px;
+      }
+      #openCameraBtn {
+        background: #28a745;
+        color: white;
+      }
+      #removeBtn {
+        background: #dc3545;
+        color: white;
+        margin-top: 10px;
+      }
+      #result {
+        margin-top: 25px;
+        font-size: 20px;
+        color: #1a1a1a;
+      }
+      .confidence-bar {
+        height: 8px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        margin-top: 5px;
+        overflow: hidden;
+      }
+      .confidence-fill {
+        height: 100%;
+        background: #28a745;
+        transition: width 0.5s;
+      }
+      video {
+        width: 100%;
+        border-radius: 10px;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🐃 Buffalo Breed Expert</h1>
+
+    <div class="card">
+      <div id="dropZone" class="drop-zone">
+        <p id="dropText">
+          <b>Drag & Drop Image</b><br />or Click to Browse<br /><small
+            >(Paste Cmd+V also works!)</small
+          >
+        </p>
+        <img id="snapshot" class="hidden" />
+      </div>
+
+      <div id="cameraArea">
+        <button id="openCameraBtn">📷 Use Camera</button>
+        <div id="videoContainer" class="hidden">
+          <video id="video" autoplay playsinline></video>
+          <button id="captureBtn" style="background: #ffc107">
+            📸 Capture Photo
+          </button>
+        </div>
+      </div>
+
+      <button id="submitBtn">Analyze Breed</button>
+      <button id="removeBtn" class="hidden">🗑️ Start Over</button>
+
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*";
+
+      const snapshot = document.getElementById("snapshot");
+      const dropText = document.getElementById("dropText");
+      const resultDiv = document.getElementById("result");
+      const removeBtn = document.getElementById("removeBtn");
+      const video = document.getElementById("video");
+
+      let selectedFile = null;
+      let capturedBlob = null;
+      let stream = null;
+
+      // --- UPLOAD LOGIC ---
+      dropZone.onclick = () => fileInput.click();
+      fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+      ["dragover", "dragleave", "drop"].forEach((n) => {
+        dropZone.addEventListener(n, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+      });
+
+      dropZone.ondrop = (e) => {
+        if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+      };
+
+      window.addEventListener("paste", (e) => {
+        const item = e.clipboardData.items[0];
+        if (item && item.type.indexOf("image") !== -1)
+          handleFile(item.getAsFile());
+      });
+
+      function handleFile(file) {
+        if (!file) return;
+        selectedFile = file;
+        capturedBlob = null;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          snapshot.src = e.target.result;
+          snapshot.classList.remove("hidden");
+          dropText.classList.add("hidden");
+          removeBtn.classList.remove("hidden");
+        };
+        reader.readAsDataURL(file);
+        stopCamera();
+      }
+
+      // --- CAMERA LOGIC ---
+      document.getElementById("openCameraBtn").onclick = async () => {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        document.getElementById("videoContainer").classList.remove("hidden");
+      };
+
+      document.getElementById("captureBtn").onclick = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        canvas.toBlob((blob) => {
+          capturedBlob = blob;
+          snapshot.src = URL.createObjectURL(blob);
+          snapshot.classList.remove("hidden");
+          dropText.classList.add("hidden");
+          removeBtn.classList.remove("hidden");
+          stopCamera();
+        });
+      };
+
+      function stopCamera() {
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        document.getElementById("videoContainer").classList.add("hidden");
+      }
+
+      removeBtn.onclick = () => {
+        selectedFile = null;
+        capturedBlob = null;
+        snapshot.classList.add("hidden");
+        dropText.classList.remove("hidden");
+        removeBtn.classList.add("hidden");
+        resultDiv.innerHTML = "";
+      };
+
+      // --- PREDICT ---
+      document.getElementById("submitBtn").onclick = async () => {
+        let fileToSquare = capturedBlob || selectedFile;
+        if (!fileToSquare) return alert("Please provide an image first!");
+
+        resultDiv.innerHTML = "⏳ AI is thinking...";
+        const formData = new FormData();
+        formData.append("image", fileToSquare);
+
+        try {
+          const res = await fetch("http://127.0.0.1:9001/predict", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+
+          if (data.predicted_breed) {
+            const conf = (data.confidence * 100).toFixed(1);
+            resultDiv.innerHTML = `
+                        <b>${data.predicted_breed}</b>
+                        <div class="confidence-bar"><div class="confidence-fill" style="width:${conf}%"></div></div>
+                        <small>${conf}% Confidence</small>
+                    `;
+          }
+        } catch (e) {
+          resultDiv.innerHTML = "❌ Connection Error";
+        }
+      };
+    </script>
+  </body>
+</html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buffalo Breed Classifier</title>
+    <style>
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #f0f2f5;
+        text-align: center;
+        padding: 20px;
+      }
+      .card {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        max-width: 450px;
+        margin: auto;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      }
+
+      .drop-zone {
+        border: 3px dashed #28a745;
+        padding: 40px;
+        border-radius: 12px;
+        background: #fafafa;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      /* Pointer-events none allows dropping even if mouse is over the text */
+      .drop-zone * {
+        pointer-events: none;
+      }
+      .drop-zone img {
+        pointer-events: auto;
+      }
+
+      .drop-zone.dragover {
+        background: #d1ecf1;
+        border-color: #0c5460;
+        transform: scale(1.02);
+      }
+
+      .drop-zone img {
+        width: 100%;
+        border-radius: 10px;
+        margin-top: 10px;
+      }
+      .hidden {
+        display: none;
+      }
+      button {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        margin: 5px;
+        width: 100%;
+      }
+      #submitBtn {
+        background: #007bff;
+        color: white;
+        font-size: 18px;
+        margin-top: 15px;
+      }
+      #openCameraBtn {
+        background: #28a745;
+        color: white;
+        width: auto;
+      }
+      #removeBtn {
+        background: #dc3545;
+        color: white;
+        margin-top: 10px;
+      }
+      video {
+        width: 100%;
+        border-radius: 10px;
+        background: #000;
+        margin-top: 10px;
+      }
+      #result {
+        margin-top: 20px;
+        font-weight: bold;
+        font-size: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🐃 Buffalo Breed Expert</h1>
+
+    <div class="card">
+      <div id="dropZone" class="drop-zone">
+        <p id="dropText">
+          <b>DRAG IMAGE HERE</b><br />
+          (From computer or another tab!)<br />
+          <small>or click to browse</small>
+        </p>
+        <img id="snapshot" class="hidden" />
+      </div>
+
+      <div id="cameraArea">
+        <button id="openCameraBtn">📷 Use Camera</button>
+        <div id="videoContainer" class="hidden">
+          <video id="video" autoplay playsinline></video>
+          <button id="captureBtn" style="background: #ffc107; width: auto">
+            📸 Capture
+          </button>
+        </div>
+      </div>
+
+      <input type="file" id="fileInput" class="hidden" accept="image/*" />
+      <button id="submitBtn">Analyze Breed</button>
+      <button id="removeBtn" class="hidden">🗑️ Start Over</button>
+
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const snapshot = document.getElementById("snapshot");
+      const resultDiv = document.getElementById("result");
+      const dropText = document.getElementById("dropText");
+
+      let selectedFile = null;
+      let stream = null;
+
+      // --- 1. UPDATED DROP LOGIC (Handles Files AND Internet Links) ---
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((name) => {
+        dropZone.addEventListener(name, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+      });
+
+      dropZone.addEventListener("dragover", () =>
+        dropZone.classList.add("dragover")
+      );
+      dropZone.addEventListener("dragleave", () =>
+        dropZone.classList.remove("dragover")
+      );
+
+      dropZone.addEventListener("drop", async (e) => {
+        dropZone.classList.remove("dragover");
+
+        // A. Handle local files from your computer folders
+        const files = e.dataTransfer.files;
+        if (files && files[0]) {
+          handleFile(files[0]);
+          return;
+        }
+
+        // B. Handle images dragged from OTHER BROWSER TABS
+        const htmlData = e.dataTransfer.getData("text/html");
+        if (htmlData) {
+          const div = document.createElement("div");
+          div.innerHTML = htmlData;
+          const img = div.querySelector("img");
+          if (img && img.src) {
+            fetchWebImage(img.src);
+            return;
+          }
+        }
+
+        // C. Fallback if only the URL text was dragged
+        const plainUrl = e.dataTransfer.getData("text/plain");
+        if (plainUrl && plainUrl.startsWith("http")) {
+          fetchWebImage(plainUrl);
+        }
+      });
+
+      // Helper to download image from a URL
+      async function fetchWebImage(url) {
+        resultDiv.innerHTML = "⏳ Fetching image from web...";
+        try {
+          const res = await fetch(url);
+          const blob = await res.blob();
+          const file = new File([blob], "web_image.jpg", { type: blob.type });
+          handleFile(file);
+        } catch (err) {
+          resultDiv.innerHTML =
+            "❌ Security Block: This site protects its images. Right-click > Copy Image, then Paste (Ctrl+V) here!";
+        }
+      }
+
+      // --- 2. BROWSE & PASTE & CAMERA ---
+      dropZone.onclick = () => fileInput.click();
+      fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+      window.addEventListener("paste", (e) => {
+        const item = e.clipboardData.items[0];
+        if (item && item.type.includes("image")) handleFile(item.getAsFile());
+      });
+
+      document.getElementById("openCameraBtn").onclick = async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          document.getElementById("video").srcObject = stream;
+          document.getElementById("videoContainer").classList.remove("hidden");
+        } catch (err) {
+          alert("Camera access denied.");
+        }
+      };
+
+      document.getElementById("captureBtn").onclick = () => {
+        const canvas = document.createElement("canvas");
+        const v = document.getElementById("video");
+        canvas.width = v.videoWidth;
+        canvas.height = v.videoHeight;
+        canvas.getContext("2d").drawImage(v, 0, 0);
+        canvas.toBlob((blob) =>
+          handleFile(new File([blob], "cap.jpg", { type: "image/jpeg" }))
+        );
+      };
+
+      // --- 3. CORE HANDLER ---
+      function handleFile(file) {
+        if (!file || !file.type.startsWith("image/")) {
+          alert("Please provide a valid image file!");
+          return;
+        }
+        selectedFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          snapshot.src = e.target.result;
+          snapshot.classList.remove("hidden");
+          dropText.classList.add("hidden");
+          document.getElementById("removeBtn").classList.remove("hidden");
+          resultDiv.innerHTML = "✅ Image ready.";
+        };
+        reader.readAsDataURL(file);
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+        document.getElementById("videoContainer").classList.add("hidden");
+      }
+
+      // --- 4. SUBMIT ---
+      document.getElementById("submitBtn").onclick = async () => {
+        if (!selectedFile) return alert("No image selected!");
+        resultDiv.innerHTML = "⏳ AI is thinking...";
+        const fd = new FormData();
+        fd.append("image", selectedFile);
+        try {
+          const res = await fetch("http://127.0.0.1:9001/predict", {
+            method: "POST",
+            body: fd,
+          });
+          const data = await res.json();
+          resultDiv.innerHTML = `Result: ${data.predicted_breed} (${(
+            data.confidence * 100
+          ).toFixed(1)}%)`;
+        } catch (e) {
+          resultDiv.innerHTML = "❌ Connection Error: Is Python running?";
+        }
+      };
+
+      document.getElementById("removeBtn").onclick = () => location.reload();
+    </script>
+  </body>
+</html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Breed Classifier</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f0f2f5;
+      text-align: center;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      padding: 25px;
+      border-radius: 15px;
+      max-width: 450px;
+      margin: auto;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    .toggle {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .toggle button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #f1f1f1;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .toggle button.active {
+      background: #28a745;
+      color: white;
+      border-color: #28a745;
+    }
+    .drop-zone {
+      border: 3px dashed #28a745;
+      padding: 40px;
+      border-radius: 12px;
+      background: #fafafa;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .drop-zone.dragover {
+      background: #d1ecf1;
+      border-color: #0c5460;
+      transform: scale(1.02);
+    }
+    .drop-zone img {
+      width: 100%;
+      border-radius: 10px;
+      margin-top: 10px;
+      display: none;
+    }
+    .hidden { display: none; }
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      margin: 5px;
+      width: 100%;
+    }
+    #submitBtn { background: #007bff; color: white; font-size: 18px; margin-top: 15px; }
+    #openCameraBtn { background: #28a745; color: white; width: auto; }
+    #removeBtn { background: #dc3545; color: white; margin-top: 10px; display: none; }
+    video {
+      width: 100%;
+      border-radius: 10px;
+      background: #000;
+      margin-top: 10px;
+    }
+    #result { margin-top: 20px; font-weight: bold; font-size: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>🐄🐃 Breed Expert</h1>
+  <div class="card">
+
+    <div class="toggle">
+      <button id="cattleBtn" class="active">🐄 Cattle</button>
+      <button id="buffaloBtn">🐃 Buffalo</button>
+    </div>
+
+    <div id="dropZone" class="drop-zone">
+      <p id="dropText">
+        <b>DRAG IMAGE HERE</b><br />
+        <small>or click to browse</small>
+      </p>
+      <img id="snapshot" />
+    </div>
+
+    <div id="cameraArea">
+      <button id="openCameraBtn">📷 Use Camera</button>
+      <div id="videoContainer" class="hidden">
+        <video id="video" autoplay playsinline></video>
+        <button id="captureBtn" style="background:#ffc107;width:auto">📸 Capture</button>
+      </div>
+    </div>
+
+    <input type="file" id="fileInput" class="hidden" accept="image/*" />
+    <button id="submitBtn">Analyze Breed</button>
+    <button id="removeBtn">🗑️ Start Over</button>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const snapshot = document.getElementById("snapshot");
+    const dropText = document.getElementById("dropText");
+    const resultDiv = document.getElementById("result");
+    const removeBtn = document.getElementById("removeBtn");
+    const videoContainer = document.getElementById("videoContainer");
+    const video = document.getElementById("video");
+    const captureBtn = document.getElementById("captureBtn");
+
+    const cattleBtn = document.getElementById("cattleBtn");
+    const buffaloBtn = document.getElementById("buffaloBtn");
+    const submitBtn = document.getElementById("submitBtn");
+    const openCameraBtn = document.getElementById("openCameraBtn");
+
+    let selectedFile = null;
+    let stream = null;
+    let selectedCategory = "cattle";
+
+    // CATEGORY TOGGLE
+    cattleBtn.onclick = () => {
+      selectedCategory = "cattle";
+      cattleBtn.classList.add("active");
+      buffaloBtn.classList.remove("active");
+    };
+    buffaloBtn.onclick = () => {
+      selectedCategory = "buffalo";
+      buffaloBtn.classList.add("active");
+      cattleBtn.classList.remove("active");
+    };
+
+    // Drag-and-drop events
+    ["dragenter","dragover","dragleave","drop"].forEach(eventName => {
+      dropZone.addEventListener(eventName, e => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    dropZone.addEventListener("dragover", e => {
+      dropZone.classList.add("dragover");
+      e.dataTransfer.dropEffect = "copy";
+    });
+
+    dropZone.addEventListener("dragleave", e => {
+      dropZone.classList.remove("dragover");
+    });
+
+    dropZone.addEventListener("drop", async e => {
+      dropZone.classList.remove("dragover");
+      const dt = e.dataTransfer;
+
+      if (dt.files && dt.files.length > 0) {
+        handleFile(dt.files[0]);
+      } else if (dt.items && dt.items.length > 0) {
+        const item = dt.items[0];
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          handleFile(file);
+        } else if (item.kind === "string" && item.type === "text/uri-list") {
+          // Dragged web image
+          const url = await new Promise(resolve => item.getAsString(resolve));
+          try {
+            const response = await fetch(url, { mode: "cors" });
+            const blob = await response.blob();
+            const filename = url.split("/").pop().split("?")[0] || "image.jpg";
+            handleFile(new File([blob], filename, { type: blob.type }));
+          } catch {
+            alert("Failed to load image from URL (CORS issue?)");
+          }
+        }
+      }
+    });
+
+    // Click to browse
+    dropZone.onclick = () => fileInput.click();
+    fileInput.onchange = e => handleFile(e.target.files[0]);
+
+    // Camera
+    openCameraBtn.onclick = async () => {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      videoContainer.classList.remove("hidden");
+    };
+
+    captureBtn.onclick = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      canvas.toBlob(blob => handleFile(new File([blob], "capture.jpg", {type:"image/jpeg"})));
+    };
+
+    // Handle selected image
+    function handleFile(file){
+      if(!file) return;
+      selectedFile = file;
+      const reader = new FileReader();
+      reader.onload = e => {
+        snapshot.src = e.target.result;
+        snapshot.style.display = "block";
+        dropText.style.display = "none";
+        removeBtn.style.display = "block";
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Submit
+    submitBtn.onclick = async () => {
+      if(!selectedFile) return alert("No image selected");
+      resultDiv.innerHTML = "⏳ Analyzing...";
+      const fd = new FormData();
+      fd.append("image", selectedFile);
+
+      const url = selectedCategory === "cattle"
+        ? "http://127.0.0.1:9001/predict"
+        : "http://127.0.0.1:9002/predict";
+
+      try {
+        const response = await fetch(url, { method: "POST", body: fd });
+        const data = await response.json();
+        resultDiv.innerHTML = `Result: ${data.predicted_breed} (${(data.confidence*100).toFixed(1)}%)`;
+      } catch {
+        resultDiv.innerHTML = "❌ Backend not running";
+      }
+    };
+
+    // Remove / start over
+    removeBtn.onclick = () => location.reload();
+  </script>
+</body>
+</html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Breed Classifier</title>
+    <style>
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #f0f2f5;
+        text-align: center;
+        padding: 20px;
+      }
+      .card {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        max-width: 450px;
+        margin: auto;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      }
+      .toggle {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .toggle button {
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        background: #f1f1f1;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .toggle button.active {
+        background: #28a745;
+        color: white;
+        border-color: #28a745;
+      }
+      .drop-zone {
+        border: 3px dashed #28a745;
+        padding: 40px;
+        border-radius: 12px;
+        background: #fafafa;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      .drop-zone.dragover {
+        background: #d1ecf1;
+        border-color: #0c5460;
+        transform: scale(1.02);
+      }
+      .drop-zone img {
+        width: 100%;
+        border-radius: 10px;
+        margin-top: 10px;
+        display: none;
+      }
+      .hidden {
+        display: none;
+      }
+      button {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        margin: 5px;
+        width: 100%;
+      }
+      #submitBtn {
+        background: #007bff;
+        color: white;
+        font-size: 18px;
+        margin-top: 15px;
+      }
+      #openCameraBtn {
+        background: #28a745;
+        color: white;
+        width: auto;
+      }
+      #removeBtn {
+        background: #dc3545;
+        color: white;
+        margin-top: 10px;
+        display: none;
+      }
+      video {
+        width: 100%;
+        border-radius: 10px;
+        background: #000;
+        margin-top: 10px;
+      }
+      #result {
+        margin-top: 20px;
+        font-weight: bold;
+        font-size: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🐄🐃 Breed Expert</h1>
+    <div class="card">
+      <div class="toggle">
+        <button id="cattleBtn" class="active">🐄 Cattle</button>
+        <button id="buffaloBtn">🐃 Buffalo</button>
+      </div>
+
+      <div id="dropZone" class="drop-zone">
+        <p id="dropText">
+          <b>DRAG IMAGE HERE</b><br /><small>or click to browse</small>
+        </p>
+        <img id="snapshot" />
+      </div>
+
+      <div id="cameraArea">
+        <button id="openCameraBtn">📷 Use Camera</button>
+        <div id="videoContainer" class="hidden">
+          <video id="video" autoplay playsinline></video>
+          <button id="captureBtn" style="background: #ffc107; width: auto">
+            📸 Capture
+          </button>
+        </div>
+      </div>
+
+      <input type="file" id="fileInput" class="hidden" accept="image/*" />
+      <button id="submitBtn">Analyze Breed</button>
+      <button id="removeBtn">🗑️ Start Over</button>
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const snapshot = document.getElementById("snapshot");
+      const dropText = document.getElementById("dropText");
+      const resultDiv = document.getElementById("result");
+      const removeBtn = document.getElementById("removeBtn");
+      const videoContainer = document.getElementById("videoContainer");
+      const video = document.getElementById("video");
+      const captureBtn = document.getElementById("captureBtn");
+
+      const cattleBtn = document.getElementById("cattleBtn");
+      const buffaloBtn = document.getElementById("buffaloBtn");
+      const submitBtn = document.getElementById("submitBtn");
+      const openCameraBtn = document.getElementById("openCameraBtn");
+
+      let selectedFile = null;
+      let stream = null;
+      let selectedCategory = "cattle";
+
+      cattleBtn.onclick = () => {
+        selectedCategory = "cattle";
+        cattleBtn.classList.add("active");
+        buffaloBtn.classList.remove("active");
+      };
+      buffaloBtn.onclick = () => {
+        selectedCategory = "buffalo";
+        buffaloBtn.classList.add("active");
+        cattleBtn.classList.remove("active");
+      };
+
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((e) => {
+        dropZone.addEventListener(e, (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+      });
+
+      dropZone.addEventListener("dragover", (e) => {
+        dropZone.classList.add("dragover");
+        e.dataTransfer.dropEffect = "copy";
+      });
+      dropZone.addEventListener("dragleave", (e) =>
+        dropZone.classList.remove("dragover")
+      );
+
+      dropZone.addEventListener("drop", async (e) => {
+        dropZone.classList.remove("dragover");
+        const dt = e.dataTransfer;
+        if (dt.files && dt.files.length > 0) handleFile(dt.files[0]);
+        else if (dt.items && dt.items.length > 0) {
+          const item = dt.items[0];
+          if (item.kind === "file") handleFile(item.getAsFile());
+          else if (item.kind === "string" && item.type === "text/uri-list") {
+            const url = await new Promise((resolve) =>
+              item.getAsString(resolve)
+            );
+            try {
+              const response = await fetch(url, { mode: "cors" });
+              const blob = await response.blob();
+              const filename =
+                url.split("/").pop().split("?")[0] || "image.jpg";
+              handleFile(new File([blob], filename, { type: blob.type }));
+            } catch {
+              alert("Failed to load image from URL (CORS issue?)");
+            }
+          }
+        }
+      });
+
+      dropZone.onclick = () => fileInput.click();
+      fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+      openCameraBtn.onclick = async () => {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        videoContainer.classList.remove("hidden");
+      };
+      captureBtn.onclick = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        canvas.toBlob((blob) =>
+          handleFile(new File([blob], "capture.jpg", { type: "image/jpeg" }))
+        );
+      };
+
+      function handleFile(file) {
+        if (!file) return;
+        selectedFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          snapshot.src = e.target.result;
+          snapshot.style.display = "block";
+          dropText.style.display = "none";
+          removeBtn.style.display = "block";
+        };
+        reader.readAsDataURL(file);
+      }
+
+      submitBtn.onclick = async () => {
+        if (!selectedFile) return alert("No image selected");
+        resultDiv.innerHTML = "⏳ Analyzing...";
+        const fd = new FormData();
+        fd.append("image", selectedFile);
+
+        const url =
+          selectedCategory === "cattle"
+            ? "http://127.0.0.1:9001/predict"
+            : "http://127.0.0.1:9002/predict";
+
+        try {
+          const response = await fetch(url, { method: "POST", body: fd });
+          const data = await response.json();
+
+          // ---------- NEW: Unknown handling ----------
+          if (data.predicted_breed === "UNKNOWN") {
+            resultDiv.innerHTML = "❌ Breed could not be recognized";
+          } else {
+            resultDiv.innerHTML = `Result: ${data.predicted_breed} (${(
+              data.confidence * 100
+            ).toFixed(1)}%)`;
+          }
+        } catch {
+          resultDiv.innerHTML = "❌ Backend not running";
+        }
+      };
+
+      removeBtn.onclick = () => location.reload();
+    </script>
+  </body>
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Breed Classifier</title>
+    <style>
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #f0f2f5;
+        text-align: center;
+        padding: 20px;
+      }
+      .card {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        max-width: 450px;
+        margin: auto;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      }
+      .toggle {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .toggle button {
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        background: #f1f1f1;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .toggle button.active {
+        background: #28a745;
+        color: white;
+        border-color: #28a745;
+      }
+      .drop-zone {
+        border: 3px dashed #28a745;
+        padding: 40px;
+        border-radius: 12px;
+        background: #fafafa;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      .drop-zone.dragover {
+        background: #d1ecf1;
+        border-color: #0c5460;
+        transform: scale(1.02);
+      }
+      .drop-zone img {
+        width: 100%;
+        border-radius: 10px;
+        margin-top: 10px;
+        display: none;
+      }
+      .hidden {
+        display: none;
+      }
+      button {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        margin: 5px;
+        width: 100%;
+      }
+      #submitBtn {
+        background: #007bff;
+        color: white;
+        font-size: 18px;
+        margin-top: 15px;
+      }
+      #openCameraBtn {
+        background: #28a745;
+        color: white;
+        width: auto;
+      }
+      #removeBtn {
+        background: #dc3545;
+        color: white;
+        margin-top: 10px;
+        display: none;
+      }
+      video {
+        width: 100%;
+        border-radius: 10px;
+        background: #000;
+        margin-top: 10px;
+      }
+      #result {
+        margin-top: 20px;
+        font-weight: bold;
+        font-size: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🐄 Breed Expert</h1>
+    <div class="card">
+      <div class="toggle">
+        <button id="cattleBtn" class="active">🐄 Cattle</button>
+        <button id="buffaloBtn">🐃 Buffalo</button>
+      </div>
+
+      <div id="dropZone" class="drop-zone">
+        <p id="dropText">
+          <b>DRAG IMAGE HERE</b><br /><small>or click to browse</small>
+        </p>
+        <img id="snapshot" />
+      </div>
+
+      <div id="cameraArea">
+        <button id="openCameraBtn">📷 Use Camera</button>
+        <div id="videoContainer" class="hidden">
+          <video id="video" autoplay playsinline></video>
+          <button id="captureBtn" style="background: #ffc107; width: auto">
+            📸 Capture
+          </button>
+        </div>
+      </div>
+
+      <input type="file" id="fileInput" class="hidden" accept="image/*" />
+      <button id="submitBtn">Analyze Breed</button>
+      <button id="removeBtn">🗑️ Start Over</button>
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const snapshot = document.getElementById("snapshot");
+      const dropText = document.getElementById("dropText");
+      const resultDiv = document.getElementById("result");
+      const removeBtn = document.getElementById("removeBtn");
+      const videoContainer = document.getElementById("videoContainer");
+      const video = document.getElementById("video");
+      const captureBtn = document.getElementById("captureBtn");
+      const submitBtn = document.getElementById("submitBtn");
+      const openCameraBtn = document.getElementById("openCameraBtn");
+
+      let selectedFile = null;
+      let stream = null;
+      let selectedCategory = "cattle";
+
+      // Toggle Logic
+      document.getElementById("cattleBtn").onclick = function () {
+        selectedCategory = "cattle";
+        this.classList.add("active");
+        document.getElementById("buffaloBtn").classList.remove("active");
+      };
+      document.getElementById("buffaloBtn").onclick = function () {
+        selectedCategory = "buffalo";
+        this.classList.add("active");
+        document.getElementById("cattleBtn").classList.remove("active");
+      };
+
+      // Drag & Drop
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((name) => {
+        dropZone.addEventListener(name, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+      });
+      dropZone.addEventListener("dragover", () =>
+        dropZone.classList.add("dragover")
+      );
+      ["dragleave", "drop"].forEach((name) => {
+        dropZone.addEventListener(name, () =>
+          dropZone.classList.remove("dragover")
+        );
+      });
+
+      dropZone.addEventListener("drop", async (e) => {
+        const dt = e.dataTransfer;
+        if (dt.files && dt.files.length > 0) {
+          handleFile(dt.files[0]);
+        } else {
+          const imageUrl = dt.getData("text/html").match(/src="?([^"\s]+)"?/);
+          if (imageUrl) {
+            resultDiv.innerHTML = "⏳ Downloading web image...";
+            try {
+              const res = await fetch(imageUrl[1]);
+              const blob = await res.blob();
+              handleFile(
+                new File([blob], "web_image.jpg", { type: "image/jpeg" })
+              );
+              resultDiv.innerHTML = "";
+            } catch {
+              resultDiv.innerHTML =
+                "❌ Web image blocked. Save and upload instead.";
+            }
+          }
+        }
+      });
+
+      dropZone.onclick = () => fileInput.click();
+      fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+      function handleFile(file) {
+        if (!file || !file.type.startsWith("image/")) return;
+        selectedFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          snapshot.src = e.target.result;
+          snapshot.style.display = "block";
+          dropText.style.display = "none";
+          removeBtn.style.display = "block";
+        };
+        reader.readAsDataURL(file);
+      }
+
+      // Camera Logic
+      openCameraBtn.onclick = async () => {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        videoContainer.classList.remove("hidden");
+        openCameraBtn.classList.add("hidden");
+      };
+
+      captureBtn.onclick = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        canvas.toBlob((blob) => {
+          handleFile(new File([blob], "capture.jpg", { type: "image/jpeg" }));
+          stream.getTracks().forEach((t) => t.stop());
+          videoContainer.classList.add("hidden");
+          openCameraBtn.classList.remove("hidden");
+        });
+      };
+
+      // --- THE PORT SWITCHING LOGIC ---
+
+      submitBtn.onclick = async () => {
+        if (!selectedFile) return alert("No image selected");
+        resultDiv.innerHTML = "⏳ Analyzing...";
+
+        const fd = new FormData();
+        fd.append("image", selectedFile);
+
+        const url =
+          selectedCategory === "cattle"
+            ? "http://127.0.0.1:9003/predict"
+            : "http://127.0.0.1:9002/predict";
+
+        try {
+          const response = await fetch(url, { method: "POST", body: fd });
+          const data = await response.json();
+
+          // Check your browser console (F12) to see this table!
+          console.log("--- AI RESPONSE ---");
+          console.table(data);
+
+          // 1. Check for Server-side Errors
+          if (data.error) {
+            resultDiv.innerHTML = `<span style="color:red;">❌ Server Error: ${data.error}</span>`;
+            return;
+          }
+
+          // 2. Check for UNKNOWN
+          if (data.predicted_breed === "UNKNOWN") {
+            resultDiv.innerHTML = `<span style="color:red;">❌ ${
+              data.message || "Breed Not Recognized"
+            }</span>`;
+          }
+          // 3. SUCCESS PATH
+          else if (data.predicted_breed && data.confidence !== undefined) {
+            const cleanName = data.predicted_breed.replace(/_/g, " ");
+            const percentage = (data.confidence * 100).toFixed(1);
+
+            resultDiv.innerHTML = `✅ Result: <span style="color:#28a745;">${cleanName}</span><br> 
+                                   📊 Confidence: ${percentage}%`;
+          } else {
+            resultDiv.innerHTML = "❌ Error: Response missing data keys";
+            console.log("Missing keys in:", data);
+          }
+        } catch (err) {
+          console.error("Connection Error:", err);
+          resultDiv.innerHTML = `❌ Backend Error: Is the ${selectedCategory} script running on the correct port?`;
+        }
+      };
+
+      removeBtn.onclick = () => location.reload();
+    </script>
+  </body>
+</html>

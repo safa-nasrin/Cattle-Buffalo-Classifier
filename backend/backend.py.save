@@ -1,0 +1,171 @@
+import tensorflow as tf
+from tensorflow.keras.applications import EfficientNetB0  # LIGHTER MODEL
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout, BatchNormalizatiofrom tensorflow.keras.models import Model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from flask import Flask, request, jsonify
+import numpy as np
+from PIL import Image
+import io
+import os
+
+app = Flask(__name__)
+BREEDS = ['gir', 'jaffrabadi', 'kankrej', 'mehsana', 'murrah', 'nili_ravi', 'red_sindhi']
+MODEL_PATH = 'breed_model_v2.keras'  # ✅ KERAS FORMAT
+
+def validate_dataset():
+    """Check dataset quality BEFORE training"""
+    train_path = '../dataset/COMBINED_DATASET/TRAIN'
+    if not os.path.exists(train_path):
+        print(f"❌ Dataset not found: {train_path}")
+        return False
+    
+    class_counts = {}
+    for breed in BREEDS:
+        breed_path = f"{train_path}/{breed}"
+        if os.path.exists(breed_path):
+            count = len([f for f in os.listdir(breed_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+            class_counts[breed] = count
+            print(f"📊 {breed}: {count} images")
+        else:
+            print(f"❌ Missing folder: {breed_path}")
+            return False
+    
+    min_count = min(class_counts.values())
+    print(f"⚠️  MINIMUM: {min_count} images/breed")
+    if min_count < 50:
+        print("❌ NEED 100+ IMAGES PER BREED FOR GOOD ACCURACY!")
+        return False
+    return True
+
+def create_best_model():
+    """EfficientNetB0 - Perfect for cattle breeds + M1"""
+    base_model = EfficientNetB0(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.3)(x)
+    x = Dense(128, activation='relu')(x)  # Smaller head
+    x = Dropout(0.2)(x)
+    predictions = Dense(7, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)
+    return model, base_model
+
+def train_model():
+    if os.path.exists(MODEL_PATH):
+        return True
+    
+    if not validate_dataset():
+        print("🚫 Dataset validation FAILED. Fix data first!")
+        return False
+    
+    print("🚀 Training EfficientNetB0 (optimized for M1 + cattle breeds)...")
+    
+    # ✅ MILDER AUGMENTATION (was too aggressive)
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        rotation_range=15,      # Reduced: 25→15
+        width_shift_range=0.1,  # Reduced: 0.2→0.1
+        height_shift_range=0.1, # Reduced
+        zoom_range=0.2,         # Reduced
+        horizontal_flip=True,
+        brightness_range=[0.9, 1.1],  # Milder
+        validation_split=0.2
+    )
+    
+    # ✅ 224x224 + batch=8 (5x faster, cooler)
+    train_generator = train_datagen.flow_from_directory(
+        '../dataset/COMBINED_DATASET/TRAIN',
+        target_size=(224, 224),  # ✅ 5x FASTER
+        batch_size=8,            # ✅ COOLER M1
+        class_mode='categorical',
+        subset='training'
+    )
+    
+    val_generator = ImageDataGenerator(rescale=1./255, validation_split=0.2).flow_from_directory(
+        '../dataset/COMBINED_DATASET/TRAIN',
+        target_size=(224, 224),
+        batch_size=8,
+        class_mode='categorical',
+        subset='validation'
+    )
+    
+    model, base_model = create_best_model()
+    
+    # Stage 1: Freeze base (train head only)
+    for layer in base_model.layers:
+        layer.trainable = False
+    
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    callbacks = [
+        EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True, verbose=1),
+        ReduceLROnPlateau(monitor='val_loss', factor=0.3, patience=3, min_lr=1e-6, verbose=1),
+        ModelCheckpoint(MODEL_PATH, monitor='val_accuracy', save_best_only=True, verbose=1)
+    ]
+    
+    history1 = model.fit(train_generator, epochs=15, validation_data=val_generator, callbacks=callbacks, verbose=1)
+    
+    # Stage 2: Fine-tune (only if good progress)
+    if max(history1.history['val_accuracy']) > 0.6:  # Only if >60% val acc
+        print("🔥 Fine-tuning top layers...")
+        for layer in base_model.layers[-20:]:
+            layer.trainable = True
+        
+        model.compile(optimizer=tf.keras.optimizers.Adam(5e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.fit(train_generator, epochs=10, validation_data=val_generator, callbacks=callbacks, verbose=1)
+    
+    model.save(MODEL_PATH)  # ✅ Native Keras format
+    print("✅ Model trained and saved! Expected: 75-92% accuracy")
+    return True
+
+# Load or train
+print("🔍 Checking model...")
+if os.path.exists(MODEL_PATH):
+    model = tf.keras.models.load_model(MODEL_PATH)
+    print("✅ Model loaded!")
+else:
+    success = train_model()
+    if success:
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print("✅ Fresh model ready!")
+    else:
+        model = None
+        print("❌ Training failed - check dataset!")
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        'status': 'ready' if model else 'needs_data',
+        'breeds': BREEDS,
+        'model_exists': os.path.exists(MODEL_PATH)
+    })
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    if model is None:
+        return jsonify({'error': 'Model not trained'}), 400
+    
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image'}), 400
+    
+    file = request.files['image']
+    img = Image.open(io.BytesIO(file.read())).convert('RGB').resize((224, 224))  # Match training
+    img_array = np.array(img, dtype=np.float32) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    
+    predictions = model.predict(img_array, verbose=0)[0]
+    top_idx = np.argmax(predictions)
+    
+    return jsonify({
+        'predicted_breed': BREEDS[top_idx].title(),
+        'confidence': float(predictions[top_idx]),
+        'top_3': [
+            {'breed': BREEDS[i].title(), 'confidence': float(predictions[i])}
+            for i in np.argsort(predictions)[-3:][::-1]
+        ]
+    })
+
+if __name__ == '__main__':
+    print("🌡️ Expected training temp: 75-85°C (M1 perfect)")
+    app.run(debug=True, port=8000, host='0.0.0.0')

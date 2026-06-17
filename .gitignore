@@ -1,0 +1,20 @@
+# Virtual Environment (Blocks that massive 548MB TensorFlow file)
+.venv/
+venv/
+ENV/
+__pycache__/
+*.pyc
+
+# ML Model files (Blocks your 118MB models)
+*.keras
+*.h5
+*.tflite
+
+# Datasets (Blocks your heavy training images and zip files)
+*.zip
+*.tar.gz
+dataset/
+COMBINED_DATASET/
+
+# OS Specific
+.DS_Store
