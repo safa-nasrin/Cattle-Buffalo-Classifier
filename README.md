@@ -1,3 +1,6 @@
+<img width="1536" height="1024" alt="picture" src="https://github.com/user-attachments/assets/f2ba3391-bc52-4b09-b5c7-4a21f62b32f5" />
+
+
 # 🐄🐃 Livestock Breed Expert Classifier
 
 > **Project Overview:** A full-stack artificial intelligence application that classifies cattle and buffalo breeds from images or live cameras using dual fine-tuned EfficientNetV2S models.
